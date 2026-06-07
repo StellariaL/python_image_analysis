@@ -1,0 +1,13 @@
+setup.py
+body_axis/__init__.py
+body_axis/analysis.py
+body_axis/fitting.py
+body_axis/io.py
+body_axis/postprocessing.py
+body_axis/preprocessing.py
+body_axis/segmentation.py
+body_axis/utils.py
+body_axis.egg-info/PKG-INFO
+body_axis.egg-info/SOURCES.txt
+body_axis.egg-info/dependency_links.txt
+body_axis.egg-info/top_level.txt
