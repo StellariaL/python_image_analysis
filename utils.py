@@ -10,13 +10,14 @@ def bin_profile(
     axis: np.ndarray,
     values: np.ndarray,
     n_bins: int,
+    limits: tuple[float, float]=(0,1)
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Bin (axis, values) into n_bins equal-width bins over [0, 1].
 
     Returns (bin_centres, mean_intensity, sem_intensity).
     """
-    edges = np.linspace(0, 1, n_bins + 1)
+    edges = np.linspace(limits[0], limits[1], n_bins + 1)
     centres = 0.5 * (edges[:-1] + edges[1:])
     means = np.full(n_bins, np.nan)
     sems  = np.full(n_bins, np.nan)
