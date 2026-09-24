@@ -1,127 +1,128 @@
 '''
-This script takes a 3D stack and generates an 2D projection of its surface layer. Good when the surface is curved.
+This script takes a 3D stack and generates a 2D projection of its surface layer.
+Good when the surface is curved.
 
 workflow:
 1. read stack
-2. apply mean filter to each slice
-3. for each pixel:
-    find the first z slice in the blurred stack that exceeds an intensity threshold;
-    then, take the next few z slices and take a max projection
+2. apply Gaussian blur to each slice
+3. for each pixel, find the first z slice in the blurred stack (from z=0 up to
+   the peak) that exceeds a local intensity threshold (peak_percentage × peak)
+4. take a local max projection in a z window centered on that threshold slice
+5. median-filter the resulting z indices, then sample the stack at those z's
 
-input parameters:
-    input_path: string, path to the stack; needs to be .tif
-    r_blur: int, mean filter radius; take a value large enough to cover your characteristic feature
-    threshold: int, intensity value threshold to find surface
-    zrange: int, number of slices taken for max projection; try a small value
+parameters:
+    r_blur: Gaussian blur sigma (px); large enough to cover characteristic features
+    peak_percentage: fraction of per-pixel peak intensity used as threshold
+    half_window: half-width of z window for local max projection
+    smooth_ker: median-filter kernel size applied to the chosen z indices
 
 outputs:
     *-surf.tif: 2D surface projection; same XY size as input stack
-    *-record.tif: 3D mask (16bit), pixel taken by the projection is coloured white; same XYZ size as input stack.
+    *-record.tif: 3D mask (16-bit), projected pixels marked 4096; same XYZ as input
 
 tips:
-Open the -record mask in fiji and merge it to the input stack to visualize which pixels are taken.
-
+Open the -record mask in Fiji and merge it to the input stack to visualize
+which pixels are taken.
 '''
 
+import os
+import re
 
+import cv2
 import numpy as np
 import tifffile as tiff
-import cv2
-import re
-import os
 from scipy.ndimage import median_filter
 
-folder="E:\\PhD_large_images\\20260512-cellshape\\"
-r_blur=200
-half_window=3
-peak_percentage=0.8
-smooth_ker=200
+folder = "E:\\PhD_large_images\\20260512-cellshape\\"
+r_blur = 200
+half_window = 0
+peak_percentage = 0.95
+smooth_ker = 200
 
-zrange=2*half_window+1
-g_blur_k=2*r_blur+1
+zrange = 2 * half_window + 1
+g_blur_k = 2 * r_blur + 1
+record_value = 4096
 
-pattern = re.compile(r'0603-e[0-9]-actin-[0-9]\.tif')
-#pattern=re.compile(r'0603-e2-actin-1\.tif')
+pattern = re.compile(r'0603-e[0-9]-lamA-[0-9]\.tif')
+# pattern = re.compile(r'0603-e2-actin-1\.tif')
+
+
+def find_threshold_z(blurred: np.ndarray, peak_percentage: float) -> np.ndarray:
+    """First z at or above peak_percentage × local peak, searching z=0 .. peak_z."""
+    z, _, _ = blurred.shape
+    peak_z = np.argmax(blurred, axis=0)
+    peak_intensity = np.take_along_axis(
+        blurred, peak_z[np.newaxis, :, :], axis=0
+    )[0]
+    local_threshold = peak_intensity * peak_percentage
+
+    z_indices = np.arange(z, dtype=np.int32)[:, np.newaxis, np.newaxis]
+    in_search = z_indices <= peak_z[np.newaxis, :, :]
+    above = blurred >= local_threshold[np.newaxis, :, :]
+    z_candidates = np.where(in_search & above, z_indices, z + 1)
+    threshold_z = z_candidates.min(axis=0)
+
+    no_hit = threshold_z > z
+    threshold_z[no_hit] = peak_z[no_hit]
+    return threshold_z
+
+
+def local_max_z(
+    stack: np.ndarray,
+    center_z: np.ndarray,
+    half_window: int,
+) -> np.ndarray:
+    """Max-intensity z in a window centered on center_z for each (y, x)."""
+    z, y, x = stack.shape
+    zrange = 2 * half_window + 1
+    window = (np.arange(zrange) - half_window).reshape(zrange, 1, 1)
+
+    local_z = center_z[np.newaxis, :, :] + window
+    local_z = np.clip(local_z, 0, z - 1)
+
+    y_ind = np.broadcast_to(np.arange(y)[:, None], (zrange, y, x))
+    x_ind = np.broadcast_to(np.arange(x)[None, :], (zrange, y, x))
+    local_intensities = stack[local_z, y_ind, x_ind]
+
+    local_max_offset = np.argmax(local_intensities, axis=0)
+    y_mesh, x_mesh = np.meshgrid(np.arange(y), np.arange(x), indexing='ij')
+    return local_z[local_max_offset, y_mesh, x_mesh]
+
 
 for filename in os.listdir(folder):
     match = pattern.match(filename)
-    if match:
-        input_path=folder+filename
-        # outputs
-        projection_path=input_path.removesuffix('.tif')+'-surf.tif'
-        record_path=input_path.removesuffix('.tif')+'-record.tif'
+    if not match:
+        continue
 
-        # initializations
-        stack = tiff.imread(input_path)
-        if stack.ndim != 3:
-            raise ValueError("Input image must be a grayscale z-stack (Z, Y, X).")
+    input_path = os.path.join(folder, filename)
+    projection_path = input_path.removesuffix('.tif') + '-surf.tif'
+    record_path = input_path.removesuffix('.tif') + '-record.tif'
 
-        Z, Y, X = stack.shape
+    stack = tiff.imread(input_path)
+    if stack.ndim != 3:
+        raise ValueError("Input image must be a grayscale z-stack (Z, Y, X).")
 
-        mask=np.zeros((Z,Y, X), dtype=stack.dtype)
-        blurred=np.zeros((Z,Y, X), dtype=stack.dtype)
-        local_z=np.zeros((Y,X),dtype=stack.dtype)
-        projection = np.zeros((Y, X), dtype=stack.dtype)
-        final_z=np.zeros((Z,Y,X),dtype=stack.dtype)
-        window = (np.arange(zrange) - half_window).reshape(zrange, 1, 1)
+    z, y, x = stack.shape
 
-        # blur image and threshold
-        for z in range(Z):
-            # cv2.GaussianBlur(src, ksize, sigmaX, sigmaY)
-            # Setting sigmaY=0 defaults it to match sigmaX (r_blur)
-            blurred[z, :, :] = cv2.GaussianBlur(
-                stack[z, :, :], 
-                (g_blur_k, g_blur_k), 
-                sigmaX=r_blur
-            ).astype(np.float32)
-        
-        # surface is assumed to be at steepest z intensity gradient
-        threshold_z = np.zeros((Y, X), dtype=np.int32)
-        
-        for y in range(Y):
-            for x in range(X):
-                z_profile = blurred[:, y, x]
-                peak_z = np.argmax(z_profile)
-                peak_intensity = z_profile[peak_z]
-                
-                local_threshold = peak_intensity *peak_percentage
-                
-                # Find the first Z slice that exceeds local threshold
-                # We restrict the search from 0 up to the peak itself
-                above_threshold_indices = np.where(z_profile[:peak_z + 1] >= local_threshold)[0]
-                
-                if len(above_threshold_indices) > 0:
-                    threshold_z[y, x] = above_threshold_indices[0]
-                else:
-                    threshold_z[y, x] = peak_z
+    blurred = np.empty((z, y, x), dtype=np.float32)
+    for zi in range(z):
+        blurred[zi] = cv2.GaussianBlur(
+            stack[zi],
+            (g_blur_k, g_blur_k),
+            sigmaX=r_blur,
+        )
 
-        smooth_z = median_filter(threshold_z, size=smooth_ker)
-        surf_z_idx = np.round(smooth_z).astype(np.int32)
-        
-        # create centered window indices around the steepest gradient slice
-        local_z = surf_z_idx[np.newaxis, :, :] + window
-        local_z = np.clip(local_z, 0, Z - 1)
+    threshold_z = find_threshold_z(blurred, peak_percentage)
+    max_z = local_max_z(stack, threshold_z, half_window)
 
-        y_ind = np.broadcast_to(np.arange(Y)[:, None], (zrange, Y, X))
-        x_ind = np.broadcast_to(np.arange(X)[None, :], (zrange, Y, X))
-        
-        local_intensities = stack[local_z, y_ind, x_ind]
-        
-        # Find local maximum within the window and map back to absolute Z indices
-        local_max_offset = np.argmax(local_intensities, axis=0)
-        
-        # Reconstruct the true absolute Z coordinate for the max intensity pixel
-        # local_z shape is (zrange, Y, X); we index it using the offset
-        y_mesh, x_mesh = np.meshgrid(np.arange(Y), np.arange(X), indexing='ij')
-        absolute_max_z = local_z[local_max_offset, y_mesh, x_mesh]
-        
-        # Build the final 2D projection
-        projection = stack[absolute_max_z, y_mesh, x_mesh]
-        
-        # Record the chosen pixel in the 3D mask
-        # Value 4096 assumes 12-bit/16-bit range data; adjust if using 8-bit (255)
-        final_z[absolute_max_z, y_mesh, x_mesh] = 4096
+    smooth_z = median_filter(max_z.astype(np.float64), size=smooth_ker)
+    surf_z_idx = np.clip(np.round(smooth_z).astype(np.int32), 0, z - 1)
 
-        # print and save output
-        tiff.imwrite(projection_path, projection)
-        tiff.imwrite(record_path,final_z)
+    y_mesh, x_mesh = np.meshgrid(np.arange(y), np.arange(x), indexing='ij')
+    projection = stack[surf_z_idx, y_mesh, x_mesh]
+
+    final_z = np.zeros((z, y, x), dtype=np.uint16)
+    final_z[surf_z_idx, y_mesh, x_mesh] = record_value
+
+    tiff.imwrite(projection_path, projection)
+    tiff.imwrite(record_path, final_z)

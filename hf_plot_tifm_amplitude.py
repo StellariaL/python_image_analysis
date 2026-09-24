@@ -12,7 +12,7 @@ sns.set_theme(style='white',font_scale=1.5)
 
 # Create boxplot
 plt.figure(figsize=(6, 4))
-ax = sns.boxplot(x='treatment', y='AR/Ac', data=df,
+ax = sns.boxplot(x='treatment', y='AR/Ac/air', data=df,
                  order=['air', 'ctrl', 'ROCKi'],
                  linewidth=1.5,
                  boxprops=dict(facecolor='white', edgecolor='black'),
@@ -23,7 +23,7 @@ ax = sns.boxplot(x='treatment', y='AR/Ac', data=df,
                  width=0.4)
 
 # plot individual data points
-sns.stripplot(x='treatment', y='AR/Ac', data=df, color='black', alpha=0.7, jitter=False)
+sns.stripplot(x='treatment', y='AR/Ac/air', data=df, color='black', alpha=0.7, jitter=False)
 
 
 # Improve layout

@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from utils import bin_profile
 
-data=pd.read_csv("E:\\PhD_large_images\\20260512-cellshape\\0603-e1-actin-summary.csv")
+data=pd.read_csv("E:\\PhD_large_images\\20260512-cellshape\\0603-e3-actin-summary.csv")
 
 n_bins=100
 

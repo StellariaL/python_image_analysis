@@ -5,13 +5,13 @@ import matplotlib.pyplot as plt
 from utils import bin_profile
 
 folder="E:\\PhD_large_images\\20260512-cellshape\\"
-translation={'view1':[0.0,0.0],
-             'view2':[2.0,1930.0],
-             'view3':[2.0,3859.0],
-             'view4':[3.0,5786.0]}
-output="E:\\PhD_large_images\\20260512-cellshape\\0603-e1-actin-summary.csv"
+translation={'1':[0.0,0.0],
+             '2':[1.0,1928.0],
+             '3':[0.0,3857.0],
+             '4':[2.0,5785.0]}
+output="E:\\PhD_large_images\\20260512-cellshape\\0603-e3-actin-summary.csv"
 
-pattern = re.compile(r'0603-e1-actin-(view[0-9])-measurement\.csv')
+pattern = re.compile(r'0603-e3-actin-([0-9])-measurement\.csv')
 n_bins=10
 
 dfs=[]
