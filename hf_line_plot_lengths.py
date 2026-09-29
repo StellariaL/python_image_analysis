@@ -1,8 +1,7 @@
 """
-Plot one numeric column against another, with one series per unique
-combination of index columns.
+Plot one numeric column against another as connected lines, with one series
+per unique combination of index columns.
 
-PLOT_TYPE may be "line" (markers connected) or "scatter" (markers only).
 If a 'treatment' column is present, each treatment gets a distinct marker.
 """
 
@@ -15,15 +14,14 @@ from matplotlib.lines import Line2D
 # ─────────────────────────────────────────────
 # CONFIG  ← edit these
 # ─────────────────────────────────────────────
-DATA_CSV = "D:\\Ruoheng_Li\\20260910-dispbead_ant\\lengths-0910+0911.csv"
-OUTPUT_DIR = "D:\\Ruoheng_Li\\20260910-dispbead_ant"
+DATA_CSV = "D:\\Ruoheng_Li\\20260830-dispbead\\lengths.csv"
+OUTPUT_DIR = "D:\\Ruoheng_Li\\20260830-dispbead"
 
 INDEX_COLUMNS = ["embryo","date"]   # columns that define one series
 X_COLUMN = "time"
-Y_COLUMN = "l_notochord_diff"
+Y_COLUMN = "l_notochord"
 X_SCALE = 1   # multiply x values by this before plotting
-Y_SCALE = 4.037630718   # multiply y values by this before plotting
-PLOT_TYPE = "line"      # "line" or "scatter"
+Y_SCALE = 1   # multiply y values by this before plotting
 TREATMENT_COLUMN = "treatment"
 
 TREATMENT_MARKERS = ["o", "s", "^", "D", "v", "P", "X", "*"]
@@ -58,9 +56,6 @@ missing = [c for c in INDEX_COLUMNS + [X_COLUMN, Y_COLUMN] if c not in df.column
 if missing:
     raise KeyError(f"Missing columns in {DATA_CSV}: {missing}")
 
-if PLOT_TYPE not in {"line", "scatter"}:
-    raise ValueError(f"PLOT_TYPE must be 'line' or 'scatter', got {PLOT_TYPE!r}")
-
 df[X_COLUMN] = df[X_COLUMN] * X_SCALE
 df[Y_COLUMN] = df[Y_COLUMN] * Y_SCALE
 
@@ -88,7 +83,7 @@ for keys, sub in df.groupby(INDEX_COLUMNS, sort=True, dropna=False):
         sub.loc[valid, X_COLUMN],
         sub.loc[valid, Y_COLUMN],
         marker=marker,
-        linestyle="None" if PLOT_TYPE == "scatter" else "-",
+        linestyle="-",
         linewidth=1.5,
         label=series_label(keys, INDEX_COLUMNS),
     )

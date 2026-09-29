@@ -7,6 +7,7 @@ python hf_estimate_time.py data/260821-init_nc.csv
 python hf_estimate_time.py file1.csv file2.csv
 python hf_estimate_time.py data/260821-init_nc.csv --output data/out.csv
 python hf_estimate_time.py data/260821-init_nc.csv --refit
+python hf_estimate_time.py data/260821-init_nc.csv --scale 0.62
 
 cache file: data/l_notochord_lowess.csv
 '''
@@ -131,12 +132,15 @@ def annotate_csv(
     fit: pd.DataFrame,
     mean_init: float,
     output_path: str | None = None,
+    scale: float = 1.0,
 ) -> pd.DataFrame:
     df = pd.read_csv(csv_path)
     if "l_notochord" not in df.columns:
         raise KeyError(f"{csv_path} has no 'l_notochord' column")
 
-    lengths = df["l_notochord"].to_numpy(dtype=float)
+    lengths = df["l_notochord"].to_numpy(dtype=float) * scale
+    if scale != 1.0:
+        df["l_notochord_scaled"] = lengths
     estimated = invert_length_to_time(
         lengths,
         fit["aligned_time"].to_numpy(dtype=float),
@@ -185,18 +189,33 @@ def main() -> None:
         default=FIT_CSV,
         help=f"Path to cached LOWESS fit CSV (default: {FIT_CSV})",
     )
+    parser.add_argument(
+        "--scale",
+        type=float,
+        default=1.0,
+        help=(
+            "Multiply l_notochord by this factor before estimating time, e.g. to "
+            "convert pixels to the calibration curve's units (default: 1.0)"
+        ),
+    )
     args = parser.parse_args()
 
     if args.output and len(args.csv) > 1:
         parser.error("--output can only be used with a single input CSV")
+    if not np.isfinite(args.scale) or args.scale <= 0:
+        parser.error("--scale must be a positive number")
 
     fit, mean_init = get_or_build_fit(fit_path=args.fit, refit=args.refit)
     print(f"Using LOWESS fit from {args.fit}")
     print(f"Mean aligned_init (fold initiation): {mean_init}")
+    if args.scale != 1.0:
+        print(f"Scaling l_notochord by {args.scale}")
 
     for csv_path in args.csv:
         output_path = args.output if len(args.csv) == 1 else None
-        result = annotate_csv(csv_path, fit, mean_init, output_path=output_path)
+        result = annotate_csv(
+            csv_path, fit, mean_init, output_path=output_path, scale=args.scale
+        )
         dest = output_path or csv_path
         print(f"Wrote estimated_time and time_to_fold_init for {len(result)} rows to {dest}")
 

@@ -28,6 +28,10 @@ OUTPUT_CSV = os.path.join("data", "lengths.csv")
 KEY_COLUMNS = ("date","embryo", "time", "treatment")
 
 
+def present_key_columns(df: pd.DataFrame) -> list:
+    return [column for column in KEY_COLUMNS if column in df.columns]
+
+
 def compute_distance(
     measurements_path: str,
     point_a: str,
@@ -35,10 +39,16 @@ def compute_distance(
     column_name: str,
 ) -> pd.DataFrame:
     df = pd.read_csv(measurements_path)
+    keys = present_key_columns(df)
+    if not keys:
+        raise ValueError(
+            f"{measurements_path} has none of the key columns {list(KEY_COLUMNS)}"
+        )
+
     points = df[df["name"].isin([point_a, point_b])].copy()
 
     coords = points.pivot_table(
-        index=list(KEY_COLUMNS),
+        index=keys,
         columns="name",
         values=["X", "Y"],
         aggfunc="first",
@@ -52,7 +62,7 @@ def compute_distance(
 
     result = coords.index.to_frame(index=False)
     result[column_name] = np.hypot(dx, dy).values
-    return result.sort_values(list(KEY_COLUMNS)).reset_index(drop=True)
+    return result.sort_values(keys).reset_index(drop=True)
 
 
 def append_to_lengths(
@@ -64,15 +74,18 @@ def append_to_lengths(
         existing = pd.read_csv(output_path)
         if column_name in existing.columns:
             existing = existing.drop(columns=[column_name])
-        output = existing.merge(
-            new_data,
-            on=list(KEY_COLUMNS),
-            how="outer",
-        )
+        merge_keys = [
+            key for key in present_key_columns(new_data) if key in existing.columns
+        ]
+        if not merge_keys:
+            raise ValueError(
+                f"{output_path} shares no key columns with the new measurements"
+            )
+        output = existing.merge(new_data, on=merge_keys, how="outer")
     else:
         output = new_data
 
-    return output.sort_values(list(KEY_COLUMNS)).reset_index(drop=True)
+    return output.sort_values(present_key_columns(output)).reset_index(drop=True)
 
 
 def main() -> None:
